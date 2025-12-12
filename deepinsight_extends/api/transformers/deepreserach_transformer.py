@@ -49,8 +49,13 @@ def chat(dialog: Dialog, messages: list[dict], stream: bool = True, scene="deep_
     authorization_key = get_or_generate_authorization_key(dialog, request)
     logging.info(f"Start call deepinsight for conversation id {conv.id}")
     logging.info(f"Start call deepinsight for request: {request}")
-    yield from call_insight(request=request, start_chat_time=start_chat_time, authorization_key=authorization_key)
-    logging.info(f"End call deepinsight for conversation id {conv.id}")
+    try:
+        yield from call_insight(request=request, start_chat_time=start_chat_time, authorization_key=authorization_key)
+    except Exception as e:
+        logging.error(f"Error in call_insight for conversation id {conv.id}: {type(e).__name__}: {e}", exc_info=True)
+        raise
+    finally:
+        logging.info(f"End call deepinsight for conversation id {conv.id}")
 
 
 def is_major_stage(event: Optional[str]) -> bool:
@@ -81,7 +86,7 @@ class ProgressManager:
 
     async def run(self):
         """Continuously process progress messages with delay."""
-        while not self._stopped:
+        while not self._stopped or not self.queue.empty():
             progress_ref = await self.queue.get()
             if progress_ref is None:
                 break  # stop signal
@@ -129,19 +134,15 @@ def call_insight(request: ChatRequest, start_chat_time: float, authorization_key
         
 
         stream_iter = stream_chat_async(request, authorization_key)
-        stream_done = False
-        progress_done = False
         stream_task = asyncio.create_task(stream_iter.__anext__(), name="stream_event")
         progress_gen = progress_manager.run()
         progress_task = asyncio.create_task(progress_gen.__anext__(), name="progress_event")
         try:
             while True:
-                if stream_done and progress_done:
-                    break
-                
-                all_tasks = [t for t in [stream_task, progress_task] if not t.done()]
+                all_tasks = [t for t in [stream_task, progress_task] if t is not None]
                 if not all_tasks:
-                    continue
+                    logging.info(f"All tasks are done, exiting _async_run")
+                    break
                 done, pending = await asyncio.wait(
                     all_tasks,
                     return_when=asyncio.FIRST_COMPLETED
@@ -151,14 +152,21 @@ def call_insight(request: ChatRequest, start_chat_time: float, authorization_key
                         try:
                             stream_event = task.result()
                         except StopAsyncIteration:
-                            stream_done = True
+                            logging.info(f"Stream task is done, exiting _async_run")
+                            stream_task = None
                             if "process" in progress_message_ref:
                                 progress_message_ref["percentage"] = 100
                                 await progress_manager.enqueue(progress_message_ref)
                             progress_manager.stop()
-                            if progress_task.done():
-                                progress_task = asyncio.create_task(progress_gen.__anext__(), name="progress_event")
                             continue
+                        except Exception as e:
+                            stream_task = None
+                            if "process" in progress_message_ref:
+                                progress_message_ref["percentage"] = 100
+                                await progress_manager.enqueue(progress_message_ref)
+                            progress_manager.stop()
+                            logging.error(f"Error get stream_event: {type(e).__name__}: {e}", exc_info=True)
+                            raise
                     
                         cur_expert_key = stream_event.messages[0].parent_message_id
                         cur_expert_key = cur_expert_key if cur_expert_key else EVENT_STATE_DEFAULT
@@ -191,7 +199,7 @@ def call_insight(request: ChatRequest, start_chat_time: float, authorization_key
                         yield _format_answer(messages=messages, start_chat_time=start_chat_time)
                         
 
-                        if not stream_done:
+                        if stream_task:
                             stream_task = asyncio.create_task(stream_iter.__anext__(), name="stream_event")
                             
                     elif task.get_name() == "progress_event":
@@ -199,13 +207,18 @@ def call_insight(request: ChatRequest, start_chat_time: float, authorization_key
                             _ = task.result()
                             yield _format_answer(messages=messages, start_chat_time=start_chat_time)
                             # 重新创建 progress_task 以继续处理队列中的消息
-                            if not progress_manager._stopped:
+                            if progress_task:
                                 progress_task = asyncio.create_task(progress_gen.__anext__(), name="progress_event")
-                            else:
-                                progress_done = True
                         except StopAsyncIteration:
-                            progress_done = True
+                            progress_task = None
                             continue
+                        except Exception as e:
+                            progress_task = None
+                            logging.error(f"Error get progress_event: {type(e).__name__}: {e}", exc_info=True)
+                            raise
+        except Exception as e:
+            logging.error(f"Request deepinsight error {e}", exc_info=True)
+            raise
         finally:
             pass
         
@@ -220,6 +233,9 @@ def call_insight(request: ChatRequest, start_chat_time: float, authorization_key
                 yield output
             except StopAsyncIteration:
                 break
+            except Exception as e:
+                logging.error("Running deepinsight error", exc_info=True)
+                raise
     finally:
         loop.close()
 

@@ -30,10 +30,19 @@ async def stream_chat_async(request: ChatRequest, authorization_key: Optional[st
         sock_read=60 * 60,
     )) as session:
         async with session.post(API_URL, json=request.model_dump(), headers=headers) as resp:
-            async for raw_line in resp.content:
-                line = raw_line.decode()
-                if line.strip():
-                    yield parse_stream(line)
+            buffer = ""
+
+            async for chunk in resp.content.iter_any():   # 不触发 Chunk too big
+                buffer += chunk.decode(errors="ignore")
+
+                # 如果你的结构是“每块独立一行”
+                # 那么就自己按换行符切
+                while "\n" in buffer:
+                    line, buffer = buffer.split("\n", 1)
+                    if line.strip():
+                        yield parse_stream(line)
+            if buffer:
+                yield parse_stream(buffer)
 
 def parse_stream(line:str)->StreamEvent:
     if line.startswith("data:"):
