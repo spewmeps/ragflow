@@ -57,10 +57,10 @@ export const generateChatMenuItems = (
     const dialog = dialogs.find((d) => d.name === dialogName);
     if (dialog) {
       const conversationApi = getConversationApiForDialog(dialogName);
-      const path =
-        conversationApi === ''
-          ? `${Routes.Chat}/${dialog.id}`
-          : `${Routes.Chat}/${dialog.id}?conversationApi=${conversationApi}`;
+      // For Ask scenario, use 'ask' as conversationApi to preserve it in URL
+      // For others, use their respective API identifiers
+      const apiParam = conversationApi === '' ? 'ask' : conversationApi;
+      const path = `${Routes.Chat}/${dialog.id}?conversationApi=${apiParam}`;
 
       menuItems.push({
         path,

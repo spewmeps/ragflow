@@ -91,8 +91,8 @@ export const useFetchDialogList = () => {
         ...pagination,
       },
     ],
-    initialData: { dialogs: [], total: 0 },
-    gcTime: 0,
+    staleTime: Infinity,
+    gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
     queryFn: async () => {
       const { data } = await chatService.listDialog(
@@ -119,12 +119,12 @@ export const useFetchDialogList = () => {
   );
 
   return {
-    data,
+    data: data || { dialogs: [], total: 0 },
     loading,
     refetch,
     searchString,
     handleInputChange: onInputChange,
-    pagination: { ...pagination, total: data?.total },
+    pagination: { ...pagination, total: data?.total ?? 0 },
     setPagination,
   };
 };
@@ -195,8 +195,8 @@ export const useFetchDialog = () => {
     refetch,
   } = useQuery<IDialog>({
     queryKey: [ChatApiAction.FetchDialog, id],
-    gcTime: 0,
-    initialData: {} as IDialog,
+    staleTime: Infinity,
+    gcTime: 5 * 60 * 1000,
     enabled: !!id,
     refetchOnWindowFocus: false,
     queryFn: async () => {
@@ -209,7 +209,7 @@ export const useFetchDialog = () => {
     },
   });
 
-  return { data, loading, refetch };
+  return { data: data || ({} as IDialog), loading, refetch };
 };
 
 //#region Conversation
@@ -225,6 +225,9 @@ export const useClickConversationCard = () => {
     (conversationId: string, isNew: string) => {
       newQueryParameters.set(ChatSearchParams.ConversationId, conversationId);
       newQueryParameters.set(ChatSearchParams.isNew, isNew);
+      // 🔑 保留现有的 conversationApi 参数，不要删除
+      // 这样可以确保不同场景（问一问、顶会洞察、深度研究）之间切换时
+      // 能够保持场景的一致性
       setSearchParams(newQueryParameters);
     },
     [setSearchParams, newQueryParameters],
@@ -235,6 +238,13 @@ export const useClickConversationCard = () => {
 
 export const useFetchConversationList = () => {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  // Normalize conversationApi: 'ask' in URL maps to empty string internally
+  const conversationApi = (() => {
+    const param = searchParams.get('conversationApi') || '';
+    return param === 'ask' ? '' : param;
+  })();
+  const { conversationId } = useGetChatSearchParams();
   const { handleClickConversation } = useClickConversationCard();
 
   const { searchString, handleInputChange } = useHandleSearchStrChange();
@@ -244,9 +254,12 @@ export const useFetchConversationList = () => {
     isFetching: loading,
     refetch,
   } = useQuery<IConversation[]>({
+    // 🔑 关键：queryKey 中不包含 conversationApi，因为会话列表与 API 无关
+    // 同一个对话框的不同场景共享同一个会话列表
+    // 这样确保 conversationApi 改变时不会重新拉取会话列表
     queryKey: [ChatApiAction.FetchConversationList, id],
-    initialData: [],
-    gcTime: 0,
+    staleTime: Infinity,
+    gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
     enabled: !!id,
     select(data) {
@@ -261,30 +274,54 @@ export const useFetchConversationList = () => {
       );
       if (data.code === 0) {
         if (data.data.length > 0) {
-          handleClickConversation(data.data[0].id, '');
+          // 🔑 只有在没有 conversationId 时才自动跳转
+          if (!conversationId) {
+            handleClickConversation(data.data[0].id, '');
+          }
         } else {
-          handleClickConversation('', '');
+          if (conversationId) {
+            handleClickConversation('', '');
+          }
         }
       }
       return data?.data;
     },
   });
 
-  return { data, loading, refetch, searchString, handleInputChange };
+  return {
+    data: data || [],
+    loading,
+    refetch,
+    searchString,
+    handleInputChange,
+  };
 };
 
 export const useFetchConversation = () => {
   const { isNew, conversationId } = useGetChatSearchParams();
+  const [searchParams] = useSearchParams();
+  // Normalize conversationApi: 'ask' in URL maps to empty string internally
+  const conversationApi = (() => {
+    const param = searchParams.get('conversationApi') || '';
+    return param === 'ask' ? '' : param;
+  })();
   const { sharedId } = useGetSharedChatSearchParams();
   const {
     data,
     isFetching: loading,
     refetch,
   } = useQuery<IClientConversation>({
-    queryKey: [ChatApiAction.FetchConversation, conversationId],
-    initialData: {} as IClientConversation,
+    // 🔑 queryKey 包含 conversationApi
+    // 不同场景的同一个 conversationId 对应不同的数据
+    // 必须分别缓存，否则切换场景后看不到数据
+    queryKey: [
+      ChatApiAction.FetchConversation,
+      conversationId,
+      conversationApi,
+    ],
     // enabled: isConversationIdExist(conversationId),
-    gcTime: 0,
+    staleTime: Infinity,
+    gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
     queryFn: async () => {
       if (
@@ -310,7 +347,11 @@ export const useFetchConversation = () => {
     },
   });
 
-  return { data, loading, refetch };
+  return {
+    data: data || ({ message: [] } as IClientConversation),
+    loading,
+    refetch,
+  };
 };
 
 export const useUpdateConversation = () => {

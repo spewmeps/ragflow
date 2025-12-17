@@ -1,5 +1,7 @@
 import { Toaster as Sonner } from '@/components/ui/sonner';
 import { Toaster } from '@/components/ui/toaster';
+import { ChatKeepAliveProvider } from '@/contexts/chat-keep-alive-provider';
+import { KeepAliveProvider } from '@/contexts/keep-alive-provider';
 import { StreamingRequestProvider } from '@/contexts/streaming-request-context';
 import i18n from '@/locales/config';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -108,9 +110,13 @@ const RootProvider = ({ children }: React.PropsWithChildren) => {
           defaultTheme={ThemeEnum.Dark}
           storageKey="ragflow-ui-theme"
         >
-          <StreamingRequestProvider>
-            <Root>{children}</Root>
-          </StreamingRequestProvider>
+          <KeepAliveProvider>
+            <ChatKeepAliveProvider>
+              <StreamingRequestProvider>
+                <Root>{children}</Root>
+              </StreamingRequestProvider>
+            </ChatKeepAliveProvider>
+          </KeepAliveProvider>
         </ThemeProvider>
       </QueryClientProvider>
     </TooltipProvider>

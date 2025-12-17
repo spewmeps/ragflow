@@ -1,5 +1,4 @@
 import Image from '@/components/image';
-import ProgressDisplay from '@/components/progress-display';
 import SvgIcon from '@/components/svg-icon';
 import ToolCallDisplay from '@/components/tool-call-display';
 import { IReference, IReferenceChunk } from '@/interfaces/database/chat';
@@ -624,14 +623,14 @@ const MarkdownContent = ({
       )}
 
       {/* 2. 进度条 */}
-      {progress !== undefined && progress > 0 && (
+      {/* {progress !== undefined && progress > 0 && (
         <ProgressDisplay
           progress={progress}
           progressSteps={progressSteps}
           elapsedTime={elapsedTime}
           showElapsedTime={false}
         />
-      )}
+      )} */}
 
       {/* 2.5. 处理进度 - 仅在 deepinsightConferenceQuestion 场景下显示进度消息 */}
       {isDeepinsightConference && progressMessage && (

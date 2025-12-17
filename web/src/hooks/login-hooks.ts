@@ -5,7 +5,7 @@ import userService, {
   loginWithChannel,
 } from '@/services/user-service';
 import authorizationUtil, { redirectToLogin } from '@/utils/authorization-util';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Form } from 'antd';
 import { FormInstance } from 'antd/lib';
 import { useEffect, useState } from 'react';
@@ -115,6 +115,7 @@ export const useRegister = () => {
 
 export const useLogout = () => {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const {
     data,
     isPending: loading,
@@ -125,6 +126,8 @@ export const useLogout = () => {
       const { data = {} } = await userService.logout();
       if (data.code === 0) {
         message.success(t('message.logout'));
+        // 🔑 清除所有缓存
+        queryClient.clear();
         authorizationUtil.removeAll();
         redirectToLogin();
       }

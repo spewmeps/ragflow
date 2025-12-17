@@ -4,7 +4,7 @@ import { EditableExecutePlan } from '@/components/editable-execute-plan';
 import { MessageType } from '@/constants/chat';
 import { IReference, IReferenceChunk } from '@/interfaces/database/chat';
 import classNames from 'classnames';
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   useFetchDocumentInfosByIds,
@@ -189,16 +189,29 @@ const MessageItem = ({
     useFetchDocumentThumbnailsByIds();
 
   // Track real-time elapsed time during loading
+  // Use a ref to store the start time and update display periodically
+  const loadingStartTimeRef = useRef<number | null>(null);
   const [realTimeElapsed, setRealTimeElapsed] = useState<number>(0);
 
-  // Effect to update real-time elapsed time every 100ms when loading
+  // When loading starts, record the start time
   useEffect(() => {
-    if (!loading || !isAssistant) {
+    if (loading && isAssistant && !loadingStartTimeRef.current) {
+      loadingStartTimeRef.current = Date.now();
+    }
+  }, [loading, isAssistant]);
+
+  // Effect to update real-time elapsed time every 100ms when loading
+  // Uses stored start time to calculate elapsed, so it continues even when page is hidden
+  useEffect(() => {
+    if (!loading || !isAssistant || !loadingStartTimeRef.current) {
       return;
     }
 
     const interval = setInterval(() => {
-      setRealTimeElapsed((prev) => prev + 100);
+      if (loadingStartTimeRef.current) {
+        const elapsed = Date.now() - loadingStartTimeRef.current;
+        setRealTimeElapsed(elapsed);
+      }
     }, 100);
 
     return () => clearInterval(interval);
@@ -208,6 +221,7 @@ const MessageItem = ({
   useEffect(() => {
     if (!loading) {
       setRealTimeElapsed(0);
+      loadingStartTimeRef.current = null;
     }
   }, [loading]);
 
@@ -453,14 +467,48 @@ const MessageItem = ({
               {/* Show main content with thinking data for deepinsightConference */}
               {!(isDeepinsightChat && interruptPlanData) && (
                 <>
-                  {/* Show loading spinner when assistant is still processing */}
+                  <MarkdownContent
+                    loading={loading}
+                    content={
+                      isAssistant
+                        ? isDeepinsightConference
+                          ? filterResultContent(item.content)
+                          : filterResultContent(item.content)
+                        : typeof item.content === 'string'
+                          ? item.content
+                          : Array.isArray(item.content)
+                            ? item.content
+                                .map((i: any) => i.content || '')
+                                .join('\n')
+                            : ''
+                    }
+                    reference={reference}
+                    progressSteps={item.data?.progressSteps}
+                    progress={isAssistant ? (item.data?.progress ?? 0) : 0}
+                    elapsedTime={item.data?.elapsedTime}
+                    clickDocumentButton={clickDocumentButton}
+                    isDeepinsightConference={isDeepinsightConference}
+                    contentArray={
+                      isDeepinsightConference
+                        ? Array.isArray(item.data?.answer)
+                          ? item.data.answer
+                          : Array.isArray(item.data?.answerArray)
+                            ? item.data.answerArray
+                            : Array.isArray(item.content)
+                              ? item.content
+                              : undefined
+                        : undefined
+                    }
+                  ></MarkdownContent>
+
+                  {/* Show loading spinner and real-time elapsed time during loading - after content */}
                   {isAssistant && loading && (
                     <div
                       style={{
                         display: 'flex',
                         alignItems: 'center',
                         gap: '8px',
-                        marginBottom: '12px',
+                        marginTop: '12px',
                       }}
                     >
                       <div
@@ -495,40 +543,6 @@ const MessageItem = ({
                       `}</style>
                     </div>
                   )}
-
-                  <MarkdownContent
-                    loading={loading}
-                    content={
-                      isAssistant
-                        ? isDeepinsightConference
-                          ? filterResultContent(item.content)
-                          : filterResultContent(item.content)
-                        : typeof item.content === 'string'
-                          ? item.content
-                          : Array.isArray(item.content)
-                            ? item.content
-                                .map((i: any) => i.content || '')
-                                .join('\n')
-                            : ''
-                    }
-                    reference={reference}
-                    progressSteps={item.data?.progressSteps}
-                    progress={isAssistant ? (item.data?.progress ?? 0) : 0}
-                    elapsedTime={item.data?.elapsedTime}
-                    clickDocumentButton={clickDocumentButton}
-                    isDeepinsightConference={isDeepinsightConference}
-                    contentArray={
-                      isDeepinsightConference
-                        ? Array.isArray(item.data?.answer)
-                          ? item.data.answer
-                          : Array.isArray(item.data?.answerArray)
-                            ? item.data.answerArray
-                            : Array.isArray(item.content)
-                              ? item.content
-                              : undefined
-                        : undefined
-                    }
-                  ></MarkdownContent>
 
                   {/* Show total elapsed time only after loading is complete */}
                   {isAssistant &&

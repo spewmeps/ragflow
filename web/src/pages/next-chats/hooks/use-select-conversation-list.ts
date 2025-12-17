@@ -31,6 +31,8 @@ export const useSetNewConversationRouteParams = () => {
     (conversationId: string, isNew: string) => {
       newQueryParameters.set(ChatSearchParams.ConversationId, conversationId);
       newQueryParameters.set(ChatSearchParams.isNew, isNew);
+      // 🔑 保留现有的 conversationApi 参数
+      // 这样确保在不同场景间切换会话时，场景信息不会丢失
       setSearchParams(newQueryParameters);
     },
     [newQueryParameters, setSearchParams],
