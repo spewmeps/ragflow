@@ -49,7 +49,7 @@ export function DeepinsightGenerationButtons({
       if (contentDisposition) {
         const matches = contentDisposition.match(/filename="?([^"]+)"?/);
         if (matches) {
-          filename = matches[1];
+          filename = decodeURIComponent(matches[1]);
         }
       }
 
@@ -93,7 +93,7 @@ export function DeepinsightGenerationButtons({
       if (contentDisposition) {
         const matches = contentDisposition.match(/filename="?([^"]+)"?/);
         if (matches) {
-          filename = matches[1];
+          filename = decodeURIComponent(matches[1]);
         }
       }
 

@@ -77,7 +77,8 @@ export default {
       nicknamePlaceholder: 'Please input nickname',
       register: 'Create an account',
       continue: 'Continue',
-      title: 'A leading RAG engine for LLM context',
+      title: 'A leading Power RAG engine for LLM context',
+      appTitle: 'Power RAG',
       start: "Let's get started",
       description:
         'Sign up for free to explore top RAG technology. Create knowledge bases and AIs to empower your business.',
@@ -1996,7 +1997,7 @@ Important structured information may include: names, dates, locations, events, k
     },
     admin: {
       loginTitle: 'Admin Console',
-      title: 'RAGFlow',
+      title: 'Power RAG',
       confirm: 'Confirm',
       close: 'Close',
       yes: 'Yes',

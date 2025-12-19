@@ -171,10 +171,10 @@ const Login = () => {
               <img
                 src={'/logo.svg'}
                 alt="logo"
-                className="size-8 mr-[12] cursor-pointer"
+                className="size-16 mr-[12] cursor-pointer"
               />
             </div>
-            <div className="text-xl font-bold self-center">RAGFlow</div>
+            <div className="text-xl font-bold self-center">{t('appTitle')}</div>
           </div>
           <h1 className="text-[36px] font-medium  text-center mb-2">
             {t('title')}

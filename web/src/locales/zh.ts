@@ -70,7 +70,8 @@ export default {
       nicknamePlaceholder: '请输入名称',
       register: '创建账户',
       continue: '继续',
-      title: 'A leading RAG engine for LLM context',
+      title: '一个领先的用于大语言模型上下文的 Power RAG引擎',
+      appTitle: '宝智通',
       start: '立即开始',
       description:
         '免费注册以探索顶级 RAG 技术。 创建知识库和人工智能来增强您的业务',
