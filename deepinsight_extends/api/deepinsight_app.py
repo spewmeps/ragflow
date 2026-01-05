@@ -19,7 +19,7 @@ from api.utils.api_utils import get_data_error_result, server_error_response, va
 from common.misc_utils import get_uuid
 from common.settings import STORAGE_IMPL
 from deepinsight_extends.api.clients.conference_client import get_pptx_from_deepinsight
-from deepinsight_extends.api.clients.pdf_client import get_pdf_from_deepinsight
+from deepinsight_extends.api.clients.pdf_client import get_pdf_from_deepinsight, get_deep_research_pdf_from_deepinsight
 from deepinsight_extends.api.schemas.deepresearch import ArgOptionsGeneric, ChatArgs, ConferencePPTGenRequest, LLMConfig, LLMSetting, PdfGenerateRequest
 from deepinsight_extends.api.transformers.deepreserach_transformer import chat
 
@@ -131,6 +131,38 @@ async def _chat_main(chat=None, scene="deep_research"):
 @validate_request("conversation_id", "messages")
 async def deep_research():
     return await _chat_main(chat=chat, scene="deep_research")
+
+
+@manager.route("/deep_research/pdf/generate", methods=["GET"])  # noqa: F821
+@login_required
+async def generate_deep_research_pdf():
+    conv_id = request.args.get("conversation_id")
+    if not conv_id:
+        return Response(status=400)
+    e, conv = ConversationService.get_by_id(conv_id)
+    if not e:
+        logging.error(f"会话{conv_id!r}不存在")
+        return Response(f"会话{conv_id!r}不存在", status=404)
+    conv: Conversation
+    if conv.user_id != current_user.id:
+        logging.error(f"会话{conv_id!r}不存在")
+        return Response(f"会话{conv_id!r}不存在", status=404)
+    filename = conv.name  # postfix added by DeepInsight
+    try:
+        last_msg = conv.message[-1].get("content")[-1]
+        if last_msg.get("type") != "result":
+            return Response(f"会话{conv_id!r}未生成报告，请稍后重试", status=500)
+        content = last_msg.get("content")
+    except Exception as e:
+        logging.error(f"获取深度洞察会话{conv_id!r}的结果时遇到了未知的{type(e).__name__}: e", exc_info=True)
+        raise RuntimeError(f"会话{conv_id!r}未生成报告，请稍后重试") from e
+    if not content:
+        raise RuntimeError(f"会话{conv_id!r}未生成报告，请稍后重试")
+    disposition, content_type, binary = get_deep_research_pdf_from_deepinsight(conv_id, filename, content)
+    return Response(binary, headers={
+        "Content-Disposition": disposition,
+        "Content-Type": content_type
+    })
 
 
 @manager.route("/conference_question", methods=["POST"])  # noqa: F821
