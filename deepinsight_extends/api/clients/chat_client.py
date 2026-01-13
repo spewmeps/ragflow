@@ -26,8 +26,8 @@ async def stream_chat_async(request: ChatRequest, authorization_key: Optional[st
         headers["Ragflow-Authorization"] = authorization_key
 
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(
-        total=60 * 60,
-        sock_read=60 * 60,
+        total=2 * 60 * 60,
+        sock_read=2 * 60 * 60,
     )) as session:
         async with session.post(API_URL, json=request.model_dump(), headers=headers) as resp:
             buffer = ""
