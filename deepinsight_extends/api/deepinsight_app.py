@@ -133,36 +133,45 @@ async def deep_research():
     return await _chat_main(chat=chat, scene="deep_research")
 
 
-@manager.route("/deep_research/pdf/generate", methods=["GET"])  # noqa: F821
+@manager.route("/deep_research/pdf/generate", methods=["POST"])  # noqa: F821
 @login_required
 async def generate_deep_research_pdf():
-    conv_id = request.args.get("conversation_id")
-    if not conv_id:
-        return Response(status=400)
-    e, conv = ConversationService.get_by_id(conv_id)
-    if not e:
-        logging.error(f"会话{conv_id!r}不存在")
-        return Response(f"会话{conv_id!r}不存在", status=404)
-    conv: Conversation
-    if conv.user_id != current_user.id:
-        logging.error(f"会话{conv_id!r}不存在")
-        return Response(f"会话{conv_id!r}不存在", status=404)
-    filename = conv.name  # postfix added by DeepInsight
     try:
-        last_msg = conv.message[-1].get("content")[-1]
-        if last_msg.get("type") != "result":
-            return Response(f"会话{conv_id!r}未生成报告，请稍后重试", status=500)
-        content = last_msg.get("content")
+        req = await request.json
+        conv_id = req.get("conversation_id")
+
+        if not conv_id:
+            return get_data_error_result(message="Conversation not found!")
+        e, conv = ConversationService.get_by_id(conv_id)
+        if not e:
+            logging.error(f"会话{conv_id!r}不存在")
+            return get_data_error_result(message="Conversation not found!")
+        conv: Conversation
+        if conv.user_id != current_user.id:
+            logging.error(f"会话{conv_id!r}不存在")
+            return get_data_error_result(message="Conversation not found!")
+        filename = conv.name  # postfix added by DeepInsight
+        try:
+            last_msg = conv.message[-1].get("content")[-1]
+            if last_msg.get("type") != "result":
+                return get_data_error_result(message=f"会话{conv_id!r}未生成报告，请稍后重试")
+            content = last_msg.get("content")
+        except Exception as e:
+            logging.error(f"获取深度洞察会话{conv_id!r}的结果时遇到了未知的{type(e).__name__}: e", exc_info=True)
+            return get_data_error_result(message=f"会话{conv_id!r}未生成报告，请稍后重试")
+        if not content:
+            return get_data_error_result(message=f"会话{conv_id!r}未生成报告，请稍后重试")
+        disposition, content_type, binary = get_deep_research_pdf_from_deepinsight(conv_id, filename, content)
+        # reformat disposition string: ragflow blob only accepts `filename=""` format.
+        encoded_filename = disposition.rsplit("UTF-8''", 1)
+        if len(encoded_filename) == 2:
+            disposition = f'attachment; filename="{encoded_filename[1]}"'
+        return Response(binary, headers={
+            "Content-Disposition": disposition,
+            "Content-Type": content_type
+        })
     except Exception as e:
-        logging.error(f"获取深度洞察会话{conv_id!r}的结果时遇到了未知的{type(e).__name__}: e", exc_info=True)
-        raise RuntimeError(f"会话{conv_id!r}未生成报告，请稍后重试") from e
-    if not content:
-        raise RuntimeError(f"会话{conv_id!r}未生成报告，请稍后重试")
-    disposition, content_type, binary = get_deep_research_pdf_from_deepinsight(conv_id, filename, content)
-    return Response(binary, headers={
-        "Content-Disposition": disposition,
-        "Content-Type": content_type
-    })
+        return server_error_response(e)
 
 
 @manager.route("/conference_question", methods=["POST"])  # noqa: F821
