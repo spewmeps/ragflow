@@ -86,7 +86,7 @@ export function TripleScenarioKeepAliveContainer() {
             }}
             data-scenario={scenario.key}
           >
-            <ChatContent />
+            <ChatContent isActive={isActive} />
           </div>
         );
       })}

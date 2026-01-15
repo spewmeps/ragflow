@@ -1,9 +1,9 @@
 import { Authorization } from '@/constants/authorization';
+import { cleanupAfterStreamingRequest } from '@/hooks/use-aggressive-memory-cleanup';
 import { IReferenceObject } from '@/interfaces/database/chat';
 import { BeginQuery } from '@/pages/agent/interface';
 import api from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
-import { EventSourceParserStream } from 'eventsource-parser/stream';
 import { useCallback, useRef, useState } from 'react';
 
 export enum MessageEventType {
@@ -89,6 +89,7 @@ export const useSendMessageBySSE = (url: string = api.completeConversation) => {
   const [done, setDone] = useState(true);
   const timer = useRef<any>();
   const sseRef = useRef<AbortController>();
+  const readerRef = useRef<ReadableStreamDefaultReader | null>(null);
 
   const initializeSseRef = useCallback(() => {
     sseRef.current = new AbortController();
@@ -99,9 +100,37 @@ export const useSendMessageBySSE = (url: string = api.completeConversation) => {
       clearTimeout(timer.current);
     }
     timer.current = setTimeout(() => {
-      setAnswerList([]);
+      setAnswerList((prev) => {
+        // 限制答案列表大小：超过300条时，只保留最近150条
+        if (prev.length > 300) {
+          const trimmed = prev.slice(-150);
+          console.debug(
+            '[SSE] Trimmed answerList from',
+            prev.length,
+            'to',
+            trimmed.length,
+          );
+          return trimmed;
+        }
+        return prev;
+      });
       clearTimeout(timer.current);
     }, 1000);
+  }, []);
+
+  /**
+   * 清理Reader资源
+   */
+  const cleanupReader = useCallback(async () => {
+    if (readerRef.current) {
+      try {
+        await readerRef.current.cancel();
+        console.debug('[SSE] Reader cancelled');
+      } catch (e) {
+        console.debug('[SSE] Error cancelling reader:', e);
+      }
+      readerRef.current = null;
+    }
   }, []);
 
   const send = useCallback(
@@ -110,6 +139,14 @@ export const useSendMessageBySSE = (url: string = api.completeConversation) => {
       controller?: AbortController,
     ): Promise<{ response: Response; data: ResponseType } | undefined> => {
       initializeSseRef();
+      // 立即清理旧的reader
+      await cleanupReader();
+      // 重置答案列表
+      setAnswerList([]);
+
+      let reader: ReadableStreamDefaultReader | null = null;
+      let buffer = '';
+
       try {
         setDone(false);
         const response = await fetch(url, {
@@ -126,56 +163,120 @@ export const useSendMessageBySSE = (url: string = api.completeConversation) => {
         if (!response.ok) {
           const errorText = `HTTP Error: ${response.status} ${response.statusText}`;
           console.error('Stream request failed:', errorText);
-          // message.error('Network error occurred. Please try again.');
           setDone(true);
           return {
-            data: { code: response.status, message: errorText },
+            data: { code: response.status, message: errorText } as any,
             response,
           };
         }
 
         const res = response.clone().json();
 
-        const reader = response?.body
-          ?.pipeThrough(new TextDecoderStream())
-          .pipeThrough(new EventSourceParserStream())
-          .getReader();
+        // 避免EventSourceParserStream的内存积累，改用手动解析
+        const stream = response.body?.pipeThrough(new TextDecoderStream());
+        if (!stream) {
+          throw new Error('Failed to create stream');
+        }
 
-        let hasStreamError = false;
+        reader = stream.getReader();
+        if (!reader) {
+          throw new Error('Failed to create reader');
+        }
+
+        readerRef.current = reader;
+
         while (true) {
           try {
             const x = await reader?.read();
             if (x) {
               const { done, value } = x;
               if (done) {
-                console.info('done');
+                // 处理最后的缓冲区
+                if (buffer.trim()) {
+                  try {
+                    const line = buffer.trim();
+                    if (line.startsWith('data: ')) {
+                      // 移除 'data: ' 前缀并处理额外空格
+                      const jsonStr = line.replace(/^data:\s*/, '').trim();
+                      if (!jsonStr) continue;
+                      const val = JSON.parse(jsonStr);
+                      // 检查错误响应 - 只跳过服务器错误
+                      if (
+                        !(val.code === 500 || (val.code && val.code >= 500))
+                      ) {
+                        setAnswerList((list) => {
+                          const nextList =
+                            list.length > 200
+                              ? list.slice(-100)
+                              : [...list, val];
+                          return nextList;
+                        });
+                      }
+                    }
+                  } catch (e) {
+                    console.debug('Error processing final line:', e);
+                  }
+                }
+                buffer = '';
                 resetAnswerList();
                 break;
               }
+
               try {
-                const val = JSON.parse(value?.data || '');
+                // 手动解析SSE格式
+                buffer += value;
+                const lines = buffer.split('\n');
+                buffer = lines[lines.length - 1];
 
-                console.info('data:', val);
+                for (let i = 0; i < lines.length - 1; i++) {
+                  const line = lines[i].trim();
+                  if (!line || line.startsWith(':')) continue;
 
-                // 检查错误响应
-                if (val.code === 500 || (val.code && val.code >= 500)) {
-                  hasStreamError = true;
-                  // message.error(val.message || 'Server error occurred');
-                  continue;
+                  if (line.startsWith('data: ')) {
+                    try {
+                      // 移除 'data: ' 前缀并处理额外空格
+                      const jsonStr = line.replace(/^data:\s*/, '').trim();
+                      if (!jsonStr) continue;
+                      const val = JSON.parse(jsonStr);
+
+                      // 检查错误响应 - 只跳过服务器错误（500+）
+                      if (val.code === 500 || (val.code && val.code >= 500)) {
+                        continue;
+                      }
+
+                      // 记录非成功的状态码但继续处理消息
+                      if (val.code !== 0 && val.code) {
+                        console.warn(
+                          'Stream response error:',
+                          val.code,
+                          val.message,
+                        );
+                      }
+
+                      // 添加所有有效的消息到列表（包括系统消息）
+                      setAnswerList((list) => {
+                        // 严格限制：超过200立即修剪到100
+                        if (list.length >= 200) {
+                          const trimmed = list.slice(-100);
+                          console.warn('[SSE] List at 200, trimmed to 100');
+                          return [...trimmed, val];
+                        }
+                        return [...list, val];
+                      });
+                    } catch (parseErr) {
+                      console.error(
+                        '[SSE] JSON parse error:',
+                        parseErr,
+                        'line (first 150 chars):',
+                        line.slice(0, 150),
+                        'length:',
+                        line.length,
+                      );
+                    }
+                  }
                 }
-
-                if (val.code !== 0 && val.code) {
-                  console.warn('Stream response error:', val.code, val.message);
-                }
-
-                setAnswerList((list) => {
-                  const nextList = [...list];
-                  nextList.push(val);
-                  return nextList;
-                });
               } catch (e) {
-                console.warn('Error parsing stream data:', e);
-                // Continue processing other chunks
+                console.debug('Error parsing stream data:', e);
               }
             }
           } catch (e) {
@@ -183,15 +284,12 @@ export const useSendMessageBySSE = (url: string = api.completeConversation) => {
               console.log('Request was aborted by user or logic.');
               break;
             }
-            // 流读取错误
             console.error('Stream read error:', e);
-            // message.error('Connection interrupted. Please try again.');
             setDone(true);
-            hasStreamError = true;
             break;
           }
         }
-        console.info('done?');
+        console.info('Stream completed');
         setDone(true);
         resetAnswerList();
         return { data: await res, response };
@@ -201,19 +299,30 @@ export const useSendMessageBySSE = (url: string = api.completeConversation) => {
 
         if (e instanceof DOMException && e.name === 'AbortError') {
           console.error('Request timeout or aborted');
-          // message.error('Request timeout. Please try again.');
         } else if (e instanceof TypeError && e.message === 'Failed to fetch') {
           console.error('Network fetch error:', e);
-          // message.error(
-          //   'Network connection failed. Please check your connection.',
-          // );
         } else {
-          console.warn('Unexpected error in stream request:', e);
-          // message.error('An error occurred. Please try again.');
+          console.warn('Unexpected error in stream request2:', e);
         }
+      } finally {
+        // 彻底清理所有资源
+        buffer = '';
+        try {
+          if (reader) {
+            await reader.cancel();
+            console.debug('[Memory] Stream reader cleaned up');
+          }
+        } catch (e) {
+          console.debug('[Memory] Error cancelling reader:', e);
+        }
+        readerRef.current = null;
+        // 清理reader资源
+        await cleanupReader();
+        // 流式请求完成后的激进清理
+        await cleanupAfterStreamingRequest(300);
       }
     },
-    [initializeSseRef, url, resetAnswerList],
+    [initializeSseRef, url, resetAnswerList, cleanupReader],
   );
 
   const stopOutputMessage = useCallback(() => {

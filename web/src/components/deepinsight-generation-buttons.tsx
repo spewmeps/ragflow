@@ -11,12 +11,14 @@ interface DeepinsightGenerationButtonsProps {
   conversationId: string;
   onPdfGenerating?: (loading: boolean) => void;
   onPptGenerating?: (loading: boolean) => void;
+  isDeepinsightChat?: boolean;
 }
 
 export function DeepinsightGenerationButtons({
   conversationId,
   onPdfGenerating,
   onPptGenerating,
+  isDeepinsightChat,
 }: DeepinsightGenerationButtonsProps) {
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pptLoading, setPptLoading] = useState(false);
@@ -27,7 +29,10 @@ export function DeepinsightGenerationButtons({
     onPdfGenerating?.(true);
 
     try {
-      const response = await fetch(api.generatePdf, {
+      const apiEndpoint = isDeepinsightChat
+        ? api.generatePdfForDeepResearch
+        : api.generatePdf;
+      const response = await fetch(apiEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -120,13 +125,15 @@ export function DeepinsightGenerationButtons({
         >
           下载 PDF
         </Button>
-        <Button
-          loading={pptLoading}
-          onClick={handleGeneratePpt}
-          icon={<FileText size={16} />}
-        >
-          生成 PPT
-        </Button>
+        {!isDeepinsightChat && (
+          <Button
+            loading={pptLoading}
+            onClick={handleGeneratePpt}
+            icon={<FileText size={16} />}
+          >
+            生成 PPT
+          </Button>
+        )}
       </div>
     </div>
   );

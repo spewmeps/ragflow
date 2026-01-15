@@ -19,6 +19,7 @@ import {
   useTranslate,
 } from '@/hooks/common-hooks';
 import {
+  usePrevious,
   useRegenerateMessage,
   useSelectDerivedMessages,
   useSendMessageWithSse,
@@ -480,12 +481,29 @@ export const useSendNextMessage = (controller: AbortController) => {
     messages: derivedMessages,
   });
 
+  // 使用 usePrevious 跟踪上一个 answer ID，避免重复处理同一个答案
+  const previousAnswerId = usePrevious(answer?.id);
+
   useEffect(() => {
     //  #1289
-    if (answer.answer && conversationId && isNew !== 'true') {
+    // 只在 answer ID 变化时处理（而不是整个 answer 对象）
+    // 这样可以避免因对象引用变化导致的无限循环
+    if (
+      answer?.answer &&
+      conversationId &&
+      isNew !== 'true' &&
+      answer.id !== previousAnswerId
+    ) {
       addNewestAnswer(answer);
     }
-  }, [answer, addNewestAnswer, conversationId, isNew]);
+  }, [
+    answer.id,
+    answer.answer,
+    previousAnswerId,
+    addNewestAnswer,
+    conversationId,
+    isNew,
+  ]);
 
   const handlePressEnter = useCallback(
     (documentIds: string[]) => {

@@ -8,6 +8,7 @@ import {
 } from '@/hooks/login-hooks';
 import { useSystemConfig } from '@/hooks/system-hooks';
 import { useInitDefaultDialogs } from '@/hooks/use-init-default-dialogs';
+import i18n from '@/locales/config';
 import { rsaPsw } from '@/utils';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -58,6 +59,12 @@ const Login = () => {
   const registerEnabled = config?.registerEnabled !== 0;
 
   const { isLogin } = useAuth();
+
+  // Set language to Chinese on component mount
+  useEffect(() => {
+    i18n.changeLanguage('zh');
+  }, []);
+
   useEffect(() => {
     if (isLogin) {
       navigate('/');

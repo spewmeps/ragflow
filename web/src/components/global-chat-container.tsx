@@ -15,6 +15,8 @@ export function GlobalChatContainer({
 }: GlobalChatContainerProps) {
   const { pathname, search } = useLocation();
   const { id: currentDialogId } = useParams();
+  const conversationIdFromSearch =
+    new URLSearchParams(search).get('conversationId') || '';
 
   // 三个场景的 dialogId 需要从配置或全局状态获取
   // 这里假设它们已经被加载
@@ -60,7 +62,12 @@ export function GlobalChatContainer({
           }}
           data-scenario={scenario.key}
         >
-          <ChatComponent scenario={scenario.key} />
+          <ChatComponent
+            key={`${scenario.key}-${conversationIdFromSearch}`}
+            scenario={scenario.key}
+            conversationId={conversationIdFromSearch}
+            isActive={isActivePath(scenario.key)}
+          />
         </div>
       ))}
     </div>

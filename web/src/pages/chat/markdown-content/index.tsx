@@ -196,16 +196,16 @@ const MarkdownContent = ({
 
   const processMarkdownPart = useCallback(
     (text: string) => {
-      let processed = DOMPurify.sanitize(text, {
-        ADD_TAGS: ['think', 'section'],
-        ADD_ATTR: ['class', 'href', 'title', 'alt', 'src'],
-        ALLOW_DATA_ATTR: false,
-      });
+      // let processed = DOMPurify.sanitize(text, {
+      //   ADD_TAGS: ['think', 'section'],
+      //   ADD_ATTR: ['class', 'href', 'title', 'alt', 'src'],
+      //   ALLOW_DATA_ATTR: false,
+      // });
 
-      if (processed === '') {
-        processed = t('chat.searching');
+      if (text.trim() === '') {
+        return t('chat.searching');
       }
-      const nextText = replaceTextByOldReg(processed);
+      const nextText = replaceTextByOldReg(text);
       return pipe(replaceThinkToSection, preprocessLaTeX)(nextText);
     },
     [t],
@@ -213,8 +213,10 @@ const MarkdownContent = ({
 
   useEffect(() => {
     const docAggs = reference?.doc_aggs;
-    setDocumentIds(Array.isArray(docAggs) ? docAggs.map((x) => x.doc_id) : []);
-  }, [reference, setDocumentIds]);
+    const docIds = Array.isArray(docAggs) ? docAggs.map((x) => x.doc_id) : [];
+    // 只在 doc_aggs 实际改变时才调用 setDocumentIds
+    setDocumentIds(docIds);
+  }, [reference?.doc_aggs, setDocumentIds]);
 
   const handleDocumentButtonClick = useCallback(
     (

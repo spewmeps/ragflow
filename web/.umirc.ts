@@ -41,7 +41,7 @@ export default defineConfig({
     {
       context: ['/api/v1/admin'],
       //113.106.163.66:43005 127.0.0.1:9381 188.239.15.136
-      target: 'http:///113.106.163.66:43005/',
+      target: 'http://188.239.42.16:8081/',
       changeOrigin: true,
       ws: true,
       logger: console,
@@ -49,7 +49,7 @@ export default defineConfig({
     {
       context: ['/api', '/v1'],
       //113.106.163.66:43002   127.0.0.1:9380 http://188.239.15.136/
-      target: 'http://113.106.163.66:43002/',
+      target: 'http://188.239.42.16:8080/',
       changeOrigin: true,
       ws: true,
       logger: console,

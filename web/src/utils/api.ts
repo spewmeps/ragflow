@@ -139,6 +139,7 @@ export default {
   getRelatedQuestions: `${api_host}/conversation/related_questions`,
   // deepinsight PDF and PPT generation
   generatePdf: `${api_host}/deepinsight/pdf/generate`,
+  generatePdfForDeepResearch: `${api_host}/deepinsight/deep_research/pdf/generate`,
   generatePpt: `${api_host}/deepinsight/ppt/generate`,
   // chat for external
   createToken: `${api_host}/api/new_token`,

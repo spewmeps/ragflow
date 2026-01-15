@@ -17,7 +17,7 @@ import { useDebounce } from 'ahooks';
 import { has } from 'lodash';
 import { useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useParams, useSearchParams } from 'umi';
+import { useNavigate, useParams, useSearchParams } from 'umi';
 import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
@@ -278,11 +278,9 @@ export const useFetchConversationList = () => {
           if (!conversationId) {
             handleClickConversation(data.data[0].id, '');
           }
-        } else {
-          if (conversationId) {
-            handleClickConversation('', '');
-          }
         }
+        // 如果列表为空，不做任何自动导航处理
+        // 让用户主动创建新会话或保持当前状态
       }
       return data?.data;
     },
@@ -306,6 +304,8 @@ export const useFetchConversation = () => {
     return param === 'ask' ? '' : param;
   })();
   const { sharedId } = useGetSharedChatSearchParams();
+  // Hook init (no debug logs)
+
   const {
     data,
     isFetching: loading,
@@ -324,6 +324,8 @@ export const useFetchConversation = () => {
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
     queryFn: async () => {
+      // queryFn invoked (no debug logs)
+
       if (
         isNew !== 'true' &&
         isConversationIdExist(sharedId || conversationId)
@@ -385,7 +387,10 @@ export const useUpdateConversation = () => {
 
 export const useRemoveConversation = () => {
   const queryClient = useQueryClient();
-  const { dialogId } = useGetChatSearchParams();
+  const { conversationId: currentConversationId } = useGetChatSearchParams();
+  const { id: dialogId } = useParams();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const {
     data,
@@ -403,7 +408,70 @@ export const useRemoveConversation = () => {
           queryKey: [ChatApiAction.FetchConversationList],
         });
       }
-      return data.code;
+      return { code: data.code, conversationIds };
+    },
+    onSuccess: async (result) => {
+      if (result.code === 0) {
+        // 检查删除的是否是当前正在查看的会话
+        const shouldNavigate = result.conversationIds.includes(
+          currentConversationId,
+        );
+        if (shouldNavigate) {
+          // 删除当前会话后，需要导航到其他会话
+          // 直接调用 API 获取最新会话列表（不触发 queryFn 的自动导航逻辑）
+          try {
+            const listResult = await chatService.listConversation(
+              { params: { dialog_id: dialogId } },
+              true,
+            );
+
+            if (
+              listResult?.data?.code === 0 &&
+              listResult.data.data &&
+              listResult.data.data.length > 0
+            ) {
+              // 导航到列表中的第一个会话
+              const firstConversation = listResult.data.data[0];
+              const newParams = new URLSearchParams(searchParams.toString());
+              newParams.set(
+                ChatSearchParams.ConversationId,
+                firstConversation.id,
+              );
+              newParams.delete(ChatSearchParams.isNew);
+              navigate({
+                pathname: `/next-chat/${dialogId}`,
+                search: `?${newParams.toString()}`,
+              });
+              // 更新缓存
+              queryClient.setQueryData(
+                [ChatApiAction.FetchConversationList, dialogId],
+                listResult.data.data,
+              );
+            } else {
+              // 如果没有其他会话，导航到空会话状态
+              const newParams = new URLSearchParams();
+              newParams.set(ChatSearchParams.ConversationId, '');
+              if (searchParams.has(ChatSearchParams.ConversationApi)) {
+                newParams.set(
+                  ChatSearchParams.ConversationApi,
+                  searchParams.get(ChatSearchParams.ConversationApi)!,
+                );
+              }
+              navigate({
+                pathname: `/next-chat/${dialogId}`,
+                search: `?${newParams.toString()}`,
+              });
+              // 更新缓存
+              queryClient.setQueryData(
+                [ChatApiAction.FetchConversationList, dialogId],
+                [],
+              );
+            }
+          } catch (err) {
+            console.error('获取会话列表失败:', err);
+          }
+        }
+      }
     },
   });
 

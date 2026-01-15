@@ -23,7 +23,7 @@ import { message } from 'antd';
 import dayjs, { Dayjs } from 'dayjs';
 import { has, set } from 'lodash';
 import { useCallback, useMemo, useState } from 'react';
-import { history, useSearchParams } from 'umi';
+import { history, useNavigate, useParams, useSearchParams } from 'umi';
 
 //#region logic
 
@@ -264,9 +264,8 @@ export const useFetchNextConversationList = () => {
       if (data.code === 0) {
         if (data.data.length > 0) {
           handleClickConversation(data.data[0].id, '');
-        } else {
-          handleClickConversation('', '');
         }
+        // 如果列表为空，不做任何自动导航处理
       }
       return data?.data;
     },
@@ -383,7 +382,10 @@ export const useUpdateNextConversation = () => {
 
 export const useRemoveNextConversation = () => {
   const queryClient = useQueryClient();
-  const { dialogId } = useGetChatSearchParams();
+  const { conversationId: currentConversationId } = useGetChatSearchParams();
+  const { id: dialogId } = useParams();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const {
     data,
@@ -399,7 +401,67 @@ export const useRemoveNextConversation = () => {
       if (data.code === 0) {
         queryClient.invalidateQueries({ queryKey: ['fetchConversationList'] });
       }
-      return data.code;
+      return { code: data.code, conversationIds };
+    },
+    onSuccess: async (result) => {
+      if (result.code === 0) {
+        // 检查删除的是否是当前正在查看的会话
+        const shouldNavigate = result.conversationIds.includes(
+          currentConversationId,
+        );
+        if (shouldNavigate) {
+          // 删除当前会话后，需要导航到其他会话
+          // 直接调用 API 获取最新会话列表（不触发 queryFn 的自动导航逻辑）
+          try {
+            const listResult = await chatService.listConversation(
+              { params: { dialog_id: dialogId } },
+              true,
+            );
+
+            if (
+              listResult?.data?.code === 0 &&
+              listResult.data.data &&
+              listResult.data.data.length > 0
+            ) {
+              // 导航到列表中的第一个会话
+              const firstConversation = listResult.data.data[0];
+              const newParams = new URLSearchParams(searchParams.toString());
+              newParams.set(
+                ChatSearchParams.ConversationId,
+                firstConversation.id,
+              );
+              newParams.delete(ChatSearchParams.isNew);
+              navigate({
+                pathname: `/chat/${dialogId}`,
+                search: `?${newParams.toString()}`,
+              });
+              // 更新缓存
+              queryClient.setQueryData(
+                ['fetchConversationList', dialogId],
+                listResult.data.data,
+              );
+            } else {
+              // 如果没有其他会话，导航到空会话状态
+              const newParams = new URLSearchParams();
+              newParams.set(ChatSearchParams.ConversationId, '');
+              if (searchParams.has(ChatSearchParams.ConversationApi)) {
+                newParams.set(
+                  ChatSearchParams.ConversationApi,
+                  searchParams.get(ChatSearchParams.ConversationApi)!,
+                );
+              }
+              navigate({
+                pathname: `/chat/${dialogId}`,
+                search: `?${newParams.toString()}`,
+              });
+              // 更新缓存
+              queryClient.setQueryData(['fetchConversationList', dialogId], []);
+            }
+          } catch (err) {
+            console.error('获取会话列表失败:', err);
+          }
+        }
+      }
     },
   });
 

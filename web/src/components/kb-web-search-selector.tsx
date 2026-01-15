@@ -172,6 +172,7 @@ export function KbWebSearchSelector({
       {/* 主菜单按钮 */}
       <button
         ref={buttonRef}
+        type="button"
         onClick={() => {
           setOpenMenu(openMenu ? null : 'kb');
         }}
@@ -223,6 +224,7 @@ export function KbWebSearchSelector({
           {/* 一级菜单 */}
           <div className="border-r border-gray-200 min-w-40">
             <button
+              type="button"
               onClick={() => setOpenMenu(openMenu === 'kb' ? null : 'kb')}
               className={cn(
                 'w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 transition-colors',
@@ -245,6 +247,7 @@ export function KbWebSearchSelector({
             </button>
             {showWebSearch && (
               <button
+                type="button"
                 onClick={() => setOpenMenu(openMenu === 'web' ? null : 'web')}
                 className={cn(
                   'w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 border-t border-gray-200 transition-colors',

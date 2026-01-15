@@ -29,11 +29,17 @@ import { useLocation } from 'umi';
 interface IProps {
   controller: AbortController;
   settingsPanelOpen?: boolean;
+  conversationId?: string; // 来自 URL 的 conversationId，供外部触发 refetch
+  isActive?: boolean;
 }
 
 const ChatContainer = ({ controller, settingsPanelOpen = false }: IProps) => {
-  const { conversationId } = useGetChatSearchParams();
-  const { data: conversation } = useFetchNextConversation();
+  // 优先使用外部传入的 conversationId（如 GlobalChatContainer 传入），否则从 URL 中读取
+  const { conversationId: conversationIdFromUrl } = useGetChatSearchParams();
+  const externalConversationId =
+    (props as any)?.conversationId || conversationIdFromUrl;
+  const isActive = (props as any)?.isActive ?? true;
+  const { data: conversation, refetch } = useFetchNextConversation();
   const { data: currentDialog } = useFetchNextDialog();
   const { search } = useLocation();
   const { setIsStreaming } = useStreamingRequest();
@@ -67,6 +73,10 @@ const ChatContainer = ({ controller, settingsPanelOpen = false }: IProps) => {
   useEffect(() => {
     setIsStreaming(sendLoading);
   }, [sendLoading, setIsStreaming]);
+
+  // NOTE: Removed explicit refetch here to avoid duplicate requests. useMultiScenarioRoute
+  // will invalidate only the precise cache for the target scenario so that only the
+  // active instance will fetch the conversation.
 
   // 提取deepinsight思考数据
   const thinkingData = useMemo(() => {

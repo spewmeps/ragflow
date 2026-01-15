@@ -3,6 +3,7 @@ import { Toaster } from '@/components/ui/toaster';
 import { ChatKeepAliveProvider } from '@/contexts/chat-keep-alive-provider';
 import { KeepAliveProvider } from '@/contexts/keep-alive-provider';
 import { StreamingRequestProvider } from '@/contexts/streaming-request-context';
+import { useAggressiveMemoryCleanup } from '@/hooks/use-aggressive-memory-cleanup';
 import i18n from '@/locales/config';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { App, ConfigProvider, ConfigProviderProps, theme } from 'antd';
@@ -64,6 +65,16 @@ function Root({ children }: React.PropsWithChildren) {
 
   const [locale, setLocal] = useState<Locale>(getLocale(storage.getLanguage()));
 
+  // 启用全局激进式内存清理
+  useAggressiveMemoryCleanup(
+    {
+      warning: 0.7, // 70%时开始清理缓存
+      critical: 0.85, // 85%时清理所有缓存
+      emergency: 0.95, // 95%时紧急清理
+    },
+    3000, // 每3秒检查一次
+  );
+
   i18n.on('languageChanged', function (lng: string) {
     storage.setLanguage(lng);
     setLocal(getLocale(lng));
@@ -100,6 +111,9 @@ const RootProvider = ({ children }: React.PropsWithChildren) => {
     const lng = storage.getLanguage();
     if (lng) {
       i18n.changeLanguage(lng);
+    } else {
+      // If no language is saved, default to Simplified Chinese
+      i18n.changeLanguage('zh');
     }
   }, []);
 
@@ -107,7 +121,7 @@ const RootProvider = ({ children }: React.PropsWithChildren) => {
     <TooltipProvider>
       <QueryClientProvider client={queryClient}>
         <ThemeProvider
-          defaultTheme={ThemeEnum.Dark}
+          defaultTheme={ThemeEnum.Light}
           storageKey="ragflow-ui-theme"
         >
           <KeepAliveProvider>

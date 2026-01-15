@@ -683,6 +683,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       },
       cancel: '取消',
       chatSetting: '聊天设置',
+      noConversations: '暂无会话',
       avatarHidden: '隐藏头像',
       locale: '地区',
       tocEnhance: '目录增强',

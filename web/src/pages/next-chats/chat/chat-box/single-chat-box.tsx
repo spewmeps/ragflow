@@ -204,11 +204,37 @@ export function SingleChatBox({
 
   // 在 deepinsight 模式下，过滤掉 type 为 think 和 result 的内容项
   const filteredMessages = useMemo(() => {
+    // 第一层：过滤掉非最后一个占位符消息
+    // 占位符消息只在等待答案时显示，一旦真实答案到达就应该被替换
+    // 去重已经在 addNewestAnswer 中完成了，这里不需要再做
+    const dedupedMessages = (derivedMessages ?? []).filter((msg, idx, arr) => {
+      // 用户消息和系统消息永远保留
+      if (msg.role !== MessageType.Assistant) {
+        return true;
+      }
+
+      const isPlaceholder =
+        typeof msg.id === 'string' && msg.id.startsWith('placeholder_');
+
+      if (!isPlaceholder) {
+        // 非占位符的助手消息：全部保留（去重已在 addNewestAnswer 中完成）
+        return true;
+      }
+
+      // 占位符消息：只保留最后一个
+      if (idx === arr.length - 1) {
+        return true;
+      }
+
+      // 占位符消息但不是最后一条，说明已经有真实答案了，过滤掉
+      return false;
+    });
+
     if (!isDeepinsightMode) {
-      return derivedMessages;
+      return dedupedMessages;
     }
 
-    return derivedMessages
+    return dedupedMessages
       ?.map((msg, msgIndex) => {
         if (msg.role !== MessageType.Assistant) {
           return msg;
@@ -259,7 +285,7 @@ export function SingleChatBox({
         const filtered = recursiveFilter(answers);
 
         // Check if this is the last assistant message
-        const isLastMessage = msgIndex === derivedMessages.length - 1;
+        const isLastMessage = msgIndex === dedupedMessages.length - 1;
 
         if (filtered.length === 0) {
           // For the last message during loading, keep it with empty content (to show placeholder)

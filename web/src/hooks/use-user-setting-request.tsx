@@ -1,5 +1,5 @@
 import message from '@/components/ui/message';
-import { LanguageTranslationMap } from '@/constants/common';
+// import { LanguageTranslationMap } from '@/constants/common';
 import { ResponseGetType } from '@/interfaces/database/base';
 import { IToken } from '@/interfaces/database/chat';
 import { ITenantInfo } from '@/interfaces/database/knowledge';
@@ -45,7 +45,7 @@ export const enum UserSettingApiAction {
 }
 
 export const useFetchUserInfo = (): ResponseGetType<IUserInfo> => {
-  const { i18n } = useTranslation();
+  // const { i18n } = useTranslation();
 
   const { data, isFetching: loading } = useQuery({
     queryKey: [UserSettingApiAction.UserInfo],
@@ -54,11 +54,11 @@ export const useFetchUserInfo = (): ResponseGetType<IUserInfo> => {
     queryFn: async () => {
       const { data } = await userService.user_info();
       if (data.code === 0) {
-        i18n.changeLanguage(
-          LanguageTranslationMap[
-            data.data.language as keyof typeof LanguageTranslationMap
-          ],
-        );
+        // i18n.changeLanguage(
+        //   LanguageTranslationMap[
+        //     data.data.language as keyof typeof LanguageTranslationMap
+        //   ],
+        // );
       }
       return data?.data ?? {};
     },

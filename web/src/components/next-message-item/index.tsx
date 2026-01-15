@@ -295,6 +295,7 @@ function MessageItem({
                   conversationId={conversationId}
                   messageId={item.id}
                   messageContent={getContentString(item.content)}
+                  isDeepinsightChat={isDeepinsightChat}
                 />
               )}
 

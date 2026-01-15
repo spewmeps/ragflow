@@ -5,6 +5,7 @@
  */
 
 import { ChatSearchParams } from '@/constants/chat';
+import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'umi';
 
@@ -69,6 +70,7 @@ export const useMultiScenarioRoute = () => {
   const [searchParams] = useSearchParams();
   const { id: dialogId } = useParams();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const lastScenarioRef = useRef<string>('ask');
   const navigationPendingRef = useRef<boolean>(false);
   const hasRestoredRef = useRef<boolean>(false);
@@ -85,19 +87,10 @@ export const useMultiScenarioRoute = () => {
 
   // 监听场景切换，恢复上次保存的会话
   useEffect(() => {
-    console.log(`[useMultiScenarioRoute-${urlScenarioKey}] Hook running`, {
-      urlScenarioKey,
-      hasRestored: hasRestoredRef.current,
-      navigationPending: navigationPendingRef.current,
-      conversationId,
-      lastRestoredScenarioKey,
-    });
+    // hook running
 
     // 如果正在等待导航完成，跳过这次检查
     if (navigationPendingRef.current) {
-      console.log(
-        `[useMultiScenarioRoute-${urlScenarioKey}] Navigation pending, skipping`,
-      );
       return;
     }
 
@@ -105,14 +98,7 @@ export const useMultiScenarioRoute = () => {
 
     // 如果场景改变了
     if (previousScenario !== urlScenarioKey) {
-      console.log(
-        `[useMultiScenarioRoute-${urlScenarioKey}] 🔄 Scene changed: ${previousScenario} -> ${urlScenarioKey}`,
-        {
-          currentConversationId: conversationId,
-          rawConversationApi,
-          savedState: scenarioStateMap.get(urlScenarioKey),
-        },
-      );
+      // scene changed
 
       // 重置恢复标志
       hasRestoredRef.current = false;
@@ -122,18 +108,7 @@ export const useMultiScenarioRoute = () => {
       // 但只有在这个场景还没有被恢复过的情况下才恢复
       const savedState = scenarioStateMap.get(urlScenarioKey);
 
-      console.log(
-        `[useMultiScenarioRoute-${urlScenarioKey}] Checking if restore needed:`,
-        {
-          hasSavedState: !!savedState,
-          savedConversationId: savedState?.conversationId,
-          currentConversationId: conversationId,
-          needsRestore:
-            savedState?.conversationId &&
-            savedState.conversationId !== conversationId,
-          lastRestoredScenarioKey,
-        },
-      );
+      // checking if restore needed
 
       // 如果有保存的 conversationId 且与当前的不同，就恢复
       // 这确保菜单点击后立即恢复状态
@@ -141,9 +116,7 @@ export const useMultiScenarioRoute = () => {
         savedState?.conversationId &&
         savedState.conversationId !== conversationId
       ) {
-        console.log(
-          `[useMultiScenarioRoute-${urlScenarioKey}] 🚀 Restoring conversation from "${conversationId}" to "${savedState.conversationId}"`,
-        );
+        // restoring conversation
 
         hasRestoredRef.current = true;
         navigationPendingRef.current = true;
@@ -171,47 +144,83 @@ export const useMultiScenarioRoute = () => {
         }
 
         const newSearch = `?${newParams.toString()}`;
-        console.log(
-          `[useMultiScenarioRoute-${urlScenarioKey}] 📍 Navigating to: /next-chat/${dialogId}${newSearch}`,
-        );
+        // navigating to saved conversation
 
         navigate({
           pathname: `/next-chat/${dialogId}`,
           search: newSearch,
         });
-
-        // 延迟后清除标志
+        // 延迟后清除标志并触发 react-query 缓存失效，确保新的 conversationId 会被重新请求
+        const savedConversationId = savedState?.conversationId;
+        const savedConversationApi = savedState?.conversationApi ?? '';
         setTimeout(() => {
           navigationPendingRef.current = false;
-          console.log(
-            `[useMultiScenarioRoute-${urlScenarioKey}] Navigation pending cleared`,
-          );
+
+          try {
+            if (savedConversationId) {
+              // 只失效目标场景和会话对应的缓存，避免触发所有保活实例的 refetch
+              queryClient.invalidateQueries({
+                queryKey: [
+                  'fetchConversation',
+                  savedConversationId,
+                  savedConversationApi,
+                ],
+              });
+            }
+          } catch (e) {
+            // eslint-disable-next-line no-console
+            console.warn('[useMultiScenarioRoute] invalidateQueries failed', e);
+          }
         }, 100);
       }
     }
   }, [urlScenarioKey, conversationId, rawConversationApi, dialogId, navigate]);
 
   // 保存当前场景的状态
-  const saveCurrentScenarioState = useCallback(() => {
-    // 只保存当前有效的（非空）conversationId
-    // 这样避免保存空状态，导致第二次切换时恢复失败
-    if (conversationId) {
-      const state: ScenarioRouteState = {
-        conversationId,
-        isNew,
-        conversationApi,
-      };
-      console.log(
-        `[useMultiScenarioRoute-${urlScenarioKey}] 💾 Saving state (only if conversationId is not empty):`,
-        state,
-      );
-      scenarioStateMap.set(urlScenarioKey, state);
-    } else {
-      console.log(
-        `[useMultiScenarioRoute-${urlScenarioKey}] ⚠️  Not saving state: conversationId is empty`,
-      );
-    }
-  }, [urlScenarioKey, conversationId, isNew, conversationApi]);
+  const saveCurrentScenarioState = useCallback(
+    (conversationList?: Array<{ id: string; is_new?: boolean }>) => {
+      // 如果当前是虚拟会话（isNew=true）且真实会话列表无数据，则不保存该虚拟会话
+      if (
+        isNew === 'true' &&
+        (!conversationList || conversationList.length === 0)
+      ) {
+        // current is virtual session and no real conversations exist, not saving state
+        return;
+      }
+
+      // 如果当前是虚拟会话（isNew=true），则改为保存会话列表的第一条会话
+      let finalConversationId = conversationId;
+      let finalIsNew = isNew;
+
+      if (isNew === 'true' && conversationList && conversationList.length > 0) {
+        // 找到第一条真实会话（is_new 不为 true）
+        const firstRealConversation = conversationList.find(
+          (conv) => conv.is_new !== true,
+        );
+        if (firstRealConversation) {
+          finalConversationId = firstRealConversation.id;
+          finalIsNew = '';
+          // current is virtual session, replacing with first real conversation
+        }
+      }
+
+      // 只保存当前有效的（非空）conversationId
+      // 这样避免保存空状态，导致第二次切换时恢复失败
+      if (finalConversationId) {
+        const state: ScenarioRouteState = {
+          conversationId: finalConversationId,
+          isNew: finalIsNew,
+          conversationApi,
+        };
+        // saving state
+        scenarioStateMap.set(urlScenarioKey, state);
+      } else {
+        // 没有会话时，清除该场景的保存状态
+        scenarioStateMap.delete(urlScenarioKey);
+      }
+    },
+    [urlScenarioKey, conversationId, isNew, conversationApi],
+  );
 
   // 获取当前场景的完整状态
   const getCurrentScenarioState = useCallback(() => {
